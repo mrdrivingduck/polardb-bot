@@ -64,7 +64,7 @@ async function replace_ci_label(
 }
 
 module.exports = async (context) => {
-  const check_suite = context.payload.check_suite;
+  const { check_suite } = context.payload;
   const check_suite_id = check_suite.id;
   const user = check_suite.head_commit.author.name;
   const conclusion = check_suite.conclusion;

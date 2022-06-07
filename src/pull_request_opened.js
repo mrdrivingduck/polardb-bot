@@ -1,26 +1,31 @@
 module.exports = async (context) => {
-  const user = context.payload.pull_request.user.login;
-  const response = await context.octokit.issues.listForRepo(
+  const contributor = context.payload.pull_request.user.login;
+  const _user_repos = await context.octokit.issues.listForRepo(
     context.repo({
       state: "all",
-      creator: user,
+      creator: contributor,
     })
   );
-  const countPR = response.data.filter((data) => data.pull_request);
+  const user_repos = _user_repos.data;
 
-  let reply = "Hi @" + user + " ~ ";
-  if (countPR.length === 1) {
-    reply += "Congratulations to your first PR to PolarDB. 🎉";
-    reply += "\n\n";
+  /**
+   * Count how many repositories has this contributor contributed to.
+   */
+  const count_pr = user_repos.filter((data) => data.pull_request);
+
+  let body = "Hi @" + contributor + " ~ ";
+  if (count_pr.length === 1) {
+    body += "Congratulations to your first PR to PolarDB. 🎉";
+    body += "\n\n";
   } else {
-    reply += "Thanks for your contribution in this PR. ❤️";
-    reply += "\n\n";
+    body += "Thanks for your contribution in this PR. ❤️";
+    body += "\n\n";
   }
 
-  reply +=
+  body +=
     "Please make sure that your PR conforms the standard, and has passed all the checks.";
-  reply += "\n\n";
-  reply += "We will review your PR as soon as possible.";
+  body += "\n\n";
+  body += "We will review your PR as soon as possible.";
 
-  return context.octokit.issues.createComment(context.issue({ body: reply }));
+  return context.octokit.issues.createComment(context.issue({ body }));
 };
