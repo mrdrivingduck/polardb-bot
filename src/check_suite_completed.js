@@ -8,11 +8,11 @@ const axios = require("axios").default;
  * @returns The PR number on Cirrus CI, or -1 if not triggered by a PR.
  */
 async function get_pull_request_number_cirrus(external_id) {
-  const cirrus = await axios.post("https://api.cirrus-ci.com/graphql", {
+  const _cirrus = await axios.post("https://api.cirrus-ci.com/graphql", {
     query: "query{task(id: " + external_id + "){build{pullRequest}}}",
   });
 
-  const result = cirrus.data.data.task.build.pullRequest;
+  const result = _cirrus.data.data.task.build.pullRequest;
 
   if (result != null) {
     return result;
