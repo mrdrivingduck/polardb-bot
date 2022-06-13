@@ -44,7 +44,6 @@ async function replace_ci_label(
 module.exports = async (context) => {
   const { check_suite } = context.payload;
   const check_suite_id = check_suite.id;
-  const user = check_suite.head_commit.author.name;
   const { conclusion, head_sha } = check_suite;
 
   const owner = context.payload.repository.owner.login;
@@ -65,7 +64,7 @@ module.exports = async (context) => {
   const linked_prs = _linked_prs.data.items;
 
   for (const linked_pr of linked_prs) {
-    const { state, html_url, labels } = linked_pr;
+    const { state, html_url, labels, user } = linked_pr;
 
     /* PR is not open, skip it */
     if (state !== "open") {
@@ -86,7 +85,7 @@ module.exports = async (context) => {
 
     const pull_request_number = parseInt(url_tokens[url_token_len - 1]);
 
-    let body = "Hey @" + user + " :\n\n";
+    let body = "Hey @" + user.login + " :\n\n";
     if (conclusion === "success") {
       body +=
         "Congratulations~ 🎉 Your commit has passed all the checks. Please wait for further manual review.";
