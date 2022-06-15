@@ -16,6 +16,7 @@ async function replace_ci_label(
   repo,
   issue_number
 ) {
+  /* remove existing `ci/` labels first */
   for (const label of labels) {
     const label_name = label.name;
 
@@ -29,6 +30,7 @@ async function replace_ci_label(
     }
   }
 
+  /* add new `ci/` label according to the CI conclusion */
   await context.octokit.issues.addLabels({
     owner,
     repo,
@@ -42,26 +44,65 @@ async function replace_ci_label(
 }
 
 module.exports = async (context) => {
-  const { check_suite } = context.payload;
-  const check_suite_id = check_suite.id;
-  const { conclusion, head_sha } = check_suite;
+  const { check_suite: input_check_suite, repository } = context.payload;
+  const { head_sha } = input_check_suite;
 
-  const owner = context.payload.repository.owner.login;
-  const repo = context.payload.repository.name;
+  const owner = repository.owner.login;
+  const repo = repository.name;
 
-  /* get the detail of check runs */
-  const _check_runs = await context.octokit.checks.listForSuite({
+  /* get all check suites belong to this commit */
+  const _check_suites = await context.octokit.checks.listSuitesForRef({
     owner,
     repo,
-    check_suite_id,
+    ref: head_sha,
   });
-  const { check_runs } = _check_runs.data;
+  const { check_suites } = _check_suites.data;
 
-  /* get the related pull request */
+  /* gather all check runs from these check suites, and gather the conclusion */
+  const all_check_runs = [];
+  const all_suite_conclusions = [];
+
+  for (const check_suite of check_suites) {
+    /* only focus on Cirrus-CI and GitHub Actions */
+    if (
+      !(
+        check_suite.app.slug === "cirrus-ci" ||
+        check_suite.app.slug === "github-actions"
+      )
+    ) {
+      continue;
+    }
+
+    /* make sure all of the check suites have completed */
+    if (check_suite.status !== "completed") {
+      return;
+    }
+
+    /* get the detail check runs of a check suite */
+    const _check_runs = await context.octokit.checks.listForSuite({
+      owner,
+      repo,
+      check_suite_id: check_suite.id,
+    });
+    const { check_runs } = _check_runs.data;
+
+    /* all check runs should have been completed */
+    let check_run_running = false;
+    for (const _check_run of check_runs) {
+      if (_check_run.status !== "completed") {
+        return;
+      }
+    }
+
+    all_check_runs.push(...check_runs);
+    all_suite_conclusions.push(check_suite.conclusion);
+  }
+
+  /* get the related pull request of this commit */
   const _linked_prs = await context.octokit.search.issuesAndPullRequests({
     q: head_sha + " SHA",
   });
-  const linked_prs = _linked_prs.data.items;
+  const { items: linked_prs } = _linked_prs.data;
 
   for (const linked_pr of linked_prs) {
     const { state, html_url, labels, user } = linked_pr;
@@ -83,10 +124,71 @@ module.exports = async (context) => {
       continue;
     }
 
+    /* get the pull request number */
     const pull_request_number = parseInt(url_tokens[url_token_len - 1]);
 
     let body = "Hey @" + user.login + " :\n\n";
-    if (conclusion === "success") {
+
+    /* at least a check run has failed */
+    if (all_suite_conclusions.indexOf("failure") !== -1) {
+      body +=
+        "Something wrong occuried during the checks of your commit 😟, please check the detail:\n\n";
+
+      /* Detail information of unsuccessful check runs */
+      all_check_runs.forEach((check_run) => {
+        if (check_run.conclusion === "failure") {
+          const check_run_name = check_run.name;
+          const check_run_url = check_run.details_url;
+          const check_run_text = check_run.output.text;
+
+          body += "<details>\n";
+          body +=
+            "<summary> ⚠️ " +
+            check_run_name +
+            " <a href='" +
+            check_run_url +
+            "'>View more details</a>" +
+            "</summary>\n\n";
+          body += check_run_text;
+          body += "\n\n";
+          body += "</details>\n\n";
+        }
+      });
+
+      await context.octokit.issues.createComment({
+        owner,
+        repo,
+        issue_number: pull_request_number,
+        body,
+      });
+
+      return await replace_ci_label(
+        context,
+        labels,
+        "failure",
+        owner,
+        repo,
+        pull_request_number
+      );
+    } else if (all_suite_conclusions.indexOf("cancelled") !== -1) {
+      body +=
+        "Your checks have been cancelled ⛔️. Please re-run the checks if you want to merge this PR.";
+
+      await context.octokit.issues.createComment({
+        owner,
+        repo,
+        issue_number: pull_request_number,
+        body,
+      });
+      return replace_ci_label(
+        context,
+        labels,
+        "cancelled",
+        owner,
+        repo,
+        pull_request_number
+      );
+    } else {
       body +=
         "Congratulations~ 🎉 Your commit has passed all the checks. Please wait for further manual review.";
       await context.octokit.issues.createComment({
@@ -98,71 +200,11 @@ module.exports = async (context) => {
       return replace_ci_label(
         context,
         labels,
-        conclusion,
+        "success",
         owner,
         repo,
         pull_request_number
       );
-    } else if (conclusion === "cancelled") {
-      body +=
-        "Your checks have been cancelled. Please re-run the checks if you want to merge this PR.";
-      await context.octokit.issues.createComment({
-        owner,
-        repo,
-        issue_number: pull_request_number,
-        body,
-      });
-      return replace_ci_label(
-        context,
-        labels,
-        conclusion,
-        owner,
-        repo,
-        pull_request_number
-      );
-    } else {
-      body +=
-        "Something wrong occuried during the checks of your commit, please check the detail: 🤓\n\n";
     }
-
-    /* Detail information of unsuccessful check runs */
-    check_runs.forEach((check_run) => {
-      if (
-        check_run.conclusion !== "success" &&
-        check_run.conclusion !== "skipped"
-      ) {
-        const check_run_name = check_run.name;
-        const check_run_url = check_run.details_url;
-        const check_run_text = check_run.output.text;
-
-        body += "<details>\n";
-        body +=
-          "<summary> ⚠️ " +
-          check_run_name +
-          " <a href='" +
-          check_run_url +
-          "'>View more details</a>" +
-          "</summary>\n\n";
-        body += check_run_text;
-        body += "\n\n";
-        body += "</details>\n\n";
-      }
-    });
-
-    await context.octokit.issues.createComment({
-      owner,
-      repo,
-      issue_number: pull_request_number,
-      body,
-    });
-
-    return await replace_ci_label(
-      context,
-      labels,
-      conclusion,
-      owner,
-      repo,
-      pull_request_number
-    );
   }
 };
