@@ -139,7 +139,10 @@ module.exports = async (context) => {
         if (check_run.conclusion === "failure") {
           const check_run_name = check_run.name;
           const check_run_url = check_run.details_url;
-          const check_run_text = check_run.output.text;
+          const check_run_text =
+            check_run.output.text === null
+              ? check_run.output.summary
+              : check_run.output.text;
 
           body += "<details>\n";
           body +=
