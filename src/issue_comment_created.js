@@ -111,7 +111,12 @@ module.exports = async (context) => {
 
       if (check_suites.total_count > 0) {
         for (const check_suite of check_suites.check_suites) {
-          const { status, conclusion } = check_suite;
+          const { status, conclusion, app } = check_suite;
+
+          if (app.slug === "github-pages" || app.slug === "polardb-bot") {
+            continue;
+          }
+
           if (status !== "completed") {
             const body =
               "@" +
