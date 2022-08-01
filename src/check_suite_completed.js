@@ -105,7 +105,7 @@ module.exports = async (context) => {
   const { items: linked_prs } = _linked_prs.data;
 
   for (const linked_pr of linked_prs) {
-    const { state, html_url, labels, user } = linked_pr;
+    const { state, html_url, labels, user, title } = linked_pr;
 
     /* PR is not open, skip it */
     if (state !== "open") {
@@ -121,6 +121,11 @@ module.exports = async (context) => {
       url_tokens[url_token_len - 3] !== repo ||
       url_tokens[url_token_len - 4] !== owner
     ) {
+      continue;
+    }
+
+    /* Skip for draft PR */
+    if (-1 !== title.indexOf("WIP") || -1 !== title.indexOf("[skip ci]")) {
       continue;
     }
 
