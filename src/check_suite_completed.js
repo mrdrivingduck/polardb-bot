@@ -157,8 +157,10 @@ module.exports = async (context) => {
             check_run_url +
             "'>View more details</a>" +
             "</summary>\n\n";
-          body += check_run_text;
-          body += "\n\n";
+          if (check_run_text !== null) {
+            body += check_run_text;
+            body += "\n\n";
+          }
           body += "</details>\n\n";
         }
       });
